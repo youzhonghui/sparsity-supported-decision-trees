@@ -293,7 +293,7 @@ def loadCSV(file, bHeader):
         except ValueError:
             return s
 
-    reader = csv.reader(open(file, 'rt'))
+    reader = csv.reader(open(file, 'r'))
     dcHeader = {}
     if bHeader:
         lsHeader = next(reader)
@@ -310,14 +310,31 @@ def main():
         type=str,
         help="The data file path"
     )
+    parser.add_argument(
+        "--header",
+        type=bool,
+        default=True,
+        help="Whether there is a header in the csv file"
+    )
+    parser.add_argument(
+        "--eval",
+        type=str,
+        default="gini",
+        help="The evaluation function, could be gini or entropy. Default using gini."
+    )
     cli_args = parser.parse_args()
 
-    # the smaller examples
-    bHeader = True
-    dcHeadings, trainingData = loadCSV(cli_args.csv, bHeader)
-    decisionTree = growDecisionTreeFrom(trainingData)
+    if cli_args.eval not in ['gini', 'entropy']:
+        print('The evaluation function should be gini or entropy')
+        exit(0)
+
+    dcHeadings, trainingData = loadCSV(cli_args.csv, cli_args.header)
+    if cli_args.eval == 'gini':
+        decisionTree = growDecisionTreeFrom(trainingData, gini)
+    else:
+        decisionTree = growDecisionTreeFrom(trainingData, entropy) 
     # prune(decisionTree, 0.8, notify=True) # notify, when a branch is pruned (one time in this example)
-    #decisionTree = growDecisionTreeFrom(trainingData, evaluationFunction=gini) # with gini
+    # decisionTree = growDecisionTreeFrom(trainingData, evaluationFunction=gini) # with gini
     plot(decisionTree, dcHeadings)
     dot_data = dotgraph(decisionTree, dcHeadings)
     graph = pydotplus.graph_from_dot_data(dot_data)
