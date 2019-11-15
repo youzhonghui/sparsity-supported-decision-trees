@@ -1,18 +1,14 @@
+#  Missing value support was added by Zhonghui You.
+#       https://github.com/youzhonghui/sparsity-supported-decision-trees
 #
 #  The original implementation was written by Michael Dorner.
-#      https://github.com/michaeldorner/DecisionTrees
+#       https://github.com/michaeldorner/DecisionTrees
 #
-#  
-#
+
+import argparse
 import csv
 from collections import defaultdict
 import pydotplus
-
-#
-# https://github.com/michaeldorner/DecisionTrees
-# http://www.math.uah.edu/stat/data/Fisher.csv
-
-
 
 class DecisionTree:
     """Binary tree implementation with true and false branch. """
@@ -193,7 +189,7 @@ def classify(observations, tree, dataMissing=False):
         return classifyWithoutMissingData(observations, tree)
 
 
-def plot(decisionTree):
+def plot(decisionTree, dcHeadings):
     """Plots the obtained decision tree. """
     def toString(decisionTree, indent=''):
         if decisionTree.results != None:  # leaf node
@@ -216,8 +212,7 @@ def plot(decisionTree):
     print(toString(decisionTree))
 
 
-def dotgraph(decisionTree):
-    global dcHeadings
+def dotgraph(decisionTree, dcHeadings):
     dcNodes = defaultdict(list)
     """Plots the obtained decision tree. """
     def toString(iSplit, decisionTree, bBranch, szParent = "null", indent=''):
@@ -289,7 +284,7 @@ def dotgraph(decisionTree):
     return dot_data
 
 
-def loadCSV(file):
+def loadCSV(file, bHeader):
     """Loads a CSV file and converts all floats and ints into basic datatypes."""
     def convertTypes(s):
         s = s.strip()
@@ -308,50 +303,31 @@ def loadCSV(file):
     return dcHeader, [[convertTypes(item) for item in row] for row in reader]
 
 
+def main():
+    parser = argparse.ArgumentParser(description="csv data file path")
+    parser.add_argument(
+        "--csv",
+        type=str,
+        help="The data file path"
+    )
+    cli_args = parser.parse_args()
+
+    # the smaller examples
+    bHeader = True
+    dcHeadings, trainingData = loadCSV(cli_args.csv, bHeader)
+    decisionTree = growDecisionTreeFrom(trainingData)
+    # prune(decisionTree, 0.8, notify=True) # notify, when a branch is pruned (one time in this example)
+    #decisionTree = growDecisionTreeFrom(trainingData, evaluationFunction=gini) # with gini
+    plot(decisionTree, dcHeadings)
+    dot_data = dotgraph(decisionTree, dcHeadings)
+    graph = pydotplus.graph_from_dot_data(dot_data)
+    graph.write_pdf("output.pdf")
+    graph.write_png("output.png")
+
+    print(classify(['ohne', 'leicht', 'Streifen', 'normal', 'normal'], decisionTree, dataMissing=False))
+    print(classify([None, 'leicht', None, 'Flocken', 'fiepend'], decisionTree, dataMissing=True)) # no longer unique
+
+
 if __name__ == '__main__':
+    main()
 
-    # Select the example you want to classify
-    example = 2
-
-    # All examples do the following steps:
-    #   1. Load training data
-    #   2. Let the decision tree grow
-    #   4. Plot the decision tree
-    #   5. classify without missing data
-    #   6. Classifiy with missing data
-    #   (7.) Prune the decision tree according to a minimal gain level
-    #   (8.) Plot the pruned tree
-
-    if example == 1:
-        # the smaller examples
-        bHeader = False
-        dcHeadings, trainingData = loadCSV('tbc.csv') # sorry for not translating the TBC and pneumonia symptoms
-        decisionTree = growDecisionTreeFrom(trainingData)
-        #decisionTree = growDecisionTreeFrom(trainingData, evaluationFunction=gini) # with gini
-        result = plot(decisionTree)
-        #print(result)
-        dot_data = dotgraph(decisionTree)
-        graph = pydotplus.graph_from_dot_data(dot_data)
-        graph.write_pdf("tbc.pdf")
-        graph.write_png("tbc.png")
-
-        print(classify(['ohne', 'leicht', 'Streifen', 'normal', 'normal'], decisionTree, dataMissing=False))
-        print(classify([None, 'leicht', None, 'Flocken', 'fiepend'], decisionTree, dataMissing=True)) # no longer unique
-
-        # Don' forget if you compare the resulting tree with the tree in my presentation: here it is a binary tree!
-
-    else:
-        bHeader = True
-        # the bigger example
-        dcHeadings, trainingData = loadCSV('fishiris.csv') # demo data from matlab
-        decisionTree = growDecisionTreeFrom(trainingData, evaluationFunction=gini)
-        prune(decisionTree, 0.8, notify=True) # notify, when a branch is pruned (one time in this example)
-        result = plot(decisionTree)
-        #print(result)
-        dot_data = dotgraph(decisionTree)
-        graph = pydotplus.graph_from_dot_data(dot_data)
-        graph.write_pdf("iris.pdf")
-        graph.write_png("iris.png")
-        
-        print(classify([6.0, 2.2, 5.0, 1.5], decisionTree)) # dataMissing=False is the default setting
-        print(classify([None, None, None, 1.5], decisionTree, dataMissing=True)) # no longer unique
