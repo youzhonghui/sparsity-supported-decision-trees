@@ -279,7 +279,7 @@ def dotgraph(decisionTree, dcHeadings):
                     szAngle = '-45'
                     szHeadLabel = 'No'
                 if missingGoes:
-                    szHeadLabel += ' or missing'
+                    szHeadLabel += ' or Missing'
                 szSplit = '%d-%s' % (nSplit, szParent)
                 p_node = dcParent[szSplit]
                 lsDot.append('%d -> %d [labeldistance=2.5, labelangle=%s, headlabel="%s"] ;' % (p_node,
