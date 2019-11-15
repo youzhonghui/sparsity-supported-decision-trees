@@ -6,25 +6,27 @@
 #
 
 import argparse
+import math
 import csv
 from collections import defaultdict
 import pydotplus
 
 class DecisionTree:
     """Binary tree implementation with true and false branch. """
-    def __init__(self, col=-1, value=None, trueBranch=None, falseBranch=None, results=None, summary=None):
+    def __init__(self, col=-1, value=None, trueBranch=None, falseBranch=None, results=None, summary=None, missingDirection=True):
         self.col = col
         self.value = value
+        self.missingDirection = missingDirection
         self.trueBranch = trueBranch
         self.falseBranch = falseBranch
         self.results = results # None for nodes, not None for leaves
         self.summary = summary
 
 
-def divideSet(rows, column, value):
+def divideSet(rows, column, value, missingDirection):
     splittingFunction = None
     if isinstance(value, int) or isinstance(value, float): # for int and float values
-        splittingFunction = lambda row : row[column] >= value
+        splittingFunction = lambda row : row[column] >= value or ((missingDirection == True) and (row[column] is math.nan))
     else: # for strings
         splittingFunction = lambda row : row[column] == value
     list1 = [row for row in rows if splittingFunction(row)]
@@ -43,8 +45,7 @@ def uniqueCounts(rows):
 
 
 def entropy(rows):
-    from math import log
-    log2 = lambda x: log(x)/log(2)
+    log2 = lambda x: math.log(x)/math.log(2)
     results = uniqueCounts(rows)
 
     entr = 0.0
@@ -89,29 +90,32 @@ def growDecisionTreeFrom(rows, evaluationFunction=entropy):
     bestSets = None
 
     columnCount = len(rows[0]) - 1  # last column is the result/target column
-    for col in range(0, columnCount):
-        columnValues = [row[col] for row in rows]
+    for missingDirection in [True, False]:
+        for col in range(0, columnCount):
+            columnValues = [row[col] for row in rows]
 
-        #unique values
-        lsUnique = list(set(columnValues))
+            #unique values
+            lsUnique = list(set(columnValues))
+            if math.nan in lsUnique:
+                lsUnique.remove(math.nan)
 
-        for value in lsUnique:
-            (set1, set2) = divideSet(rows, col, value)
+            for value in lsUnique:
+                (set1, set2) = divideSet(rows, col, value, missingDirection)
 
-            # Gain -- Entropy or Gini
-            p = float(len(set1)) / len(rows)
-            gain = currentScore - p*evaluationFunction(set1) - (1-p)*evaluationFunction(set2)
-            if gain>bestGain and len(set1)>0 and len(set2)>0:
-                bestGain = gain
-                bestAttribute = (col, value)
-                bestSets = (set1, set2)
+                # Gain -- Entropy or Gini
+                p = float(len(set1)) / len(rows)
+                gain = currentScore - p*evaluationFunction(set1) - (1-p)*evaluationFunction(set2)
+                if gain>bestGain and len(set1)>0 and len(set2)>0:
+                    bestGain = gain
+                    bestAttribute = (col, value, missingDirection)
+                    bestSets = (set1, set2)
 
     dcY = {'impurity' : '%.3f' % currentScore, 'samples' : '%d' % len(rows)}
     if bestGain > 0:
         trueBranch = growDecisionTreeFrom(bestSets[0], evaluationFunction)
         falseBranch = growDecisionTreeFrom(bestSets[1], evaluationFunction)
         return DecisionTree(col=bestAttribute[0], value=bestAttribute[1], trueBranch=trueBranch,
-                            falseBranch=falseBranch, summary=dcY)
+                            falseBranch=falseBranch, summary=dcY, missingDirection=bestAttribute[2])
     else:
         return DecisionTree(results=uniqueCounts(rows), summary=dcY)
 
@@ -205,8 +209,11 @@ def plot(decisionTree, dcHeadings):
                 decision = '%s >= %s?' % (szCol, decisionTree.value)
             else:
                 decision = '%s == %s?' % (szCol, decisionTree.value)
-            trueBranch = indent + 'yes -> ' + toString(decisionTree.trueBranch, indent + '\t\t')
-            falseBranch = indent + 'no  -> ' + toString(decisionTree.falseBranch, indent + '\t\t')
+
+            leftText = 'yes, missing -> ' if decisionTree.missingDirection else 'yes -> '
+            rightText = 'no, missing -> ' if not decisionTree.missingDirection else 'no -> '
+            trueBranch = indent + leftText + toString(decisionTree.trueBranch, indent + '\t\t')
+            falseBranch = indent + rightText + toString(decisionTree.falseBranch, indent + '\t\t')
             return (decision + '\n' + trueBranch + '\n' + falseBranch)
 
     print(toString(decisionTree))
@@ -215,14 +222,14 @@ def plot(decisionTree, dcHeadings):
 def dotgraph(decisionTree, dcHeadings):
     dcNodes = defaultdict(list)
     """Plots the obtained decision tree. """
-    def toString(iSplit, decisionTree, bBranch, szParent = "null", indent=''):
+    def toString(iSplit, decisionTree, bBranch, missingGoes, szParent = "null", indent=''):
         if decisionTree.results != None:  # leaf node
             lsX = [(x, y) for x, y in decisionTree.results.items()]
             lsX.sort()
             szY = ', '.join(['%s: %s' % (x, y) for x, y in lsX])
             dcY = {"name": szY, "parent" : szParent}
             dcSummary = decisionTree.summary
-            dcNodes[iSplit].append(['leaf', dcY['name'], szParent, bBranch, dcSummary['impurity'],
+            dcNodes[iSplit].append(['leaf', dcY['name'], szParent, bBranch, missingGoes, dcSummary['impurity'],
                                     dcSummary['samples']])
             return dcY
         else:
@@ -233,14 +240,14 @@ def dotgraph(decisionTree, dcHeadings):
                     decision = '%s >= %s' % (szCol, decisionTree.value)
             else:
                     decision = '%s == %s' % (szCol, decisionTree.value)
-            trueBranch = toString(iSplit+1, decisionTree.trueBranch, True, decision, indent + '\t\t')
-            falseBranch = toString(iSplit+1, decisionTree.falseBranch, False, decision, indent + '\t\t')
+            trueBranch = toString(iSplit+1, decisionTree.trueBranch, True, decisionTree.missingDirection == True, decision, indent + '\t\t')
+            falseBranch = toString(iSplit+1, decisionTree.falseBranch, False, decisionTree.missingDirection == False, decision, indent + '\t\t')
             dcSummary = decisionTree.summary
-            dcNodes[iSplit].append([iSplit+1, decision, szParent, bBranch, dcSummary['impurity'],
+            dcNodes[iSplit].append([iSplit+1, decision, szParent, bBranch, missingGoes, dcSummary['impurity'],
                                     dcSummary['samples']])
             return
 
-    toString(0, decisionTree, None)
+    toString(0, decisionTree, None, None)
     lsDot = ['digraph Tree {',
                 'node [shape=box, style="filled, rounded", color="black", fontname=helvetica] ;',
                 'edge [fontname=helvetica] ;'
@@ -250,7 +257,7 @@ def dotgraph(decisionTree, dcHeadings):
     for nSplit in range(len(dcNodes)):
         lsY = dcNodes[nSplit]
         for lsX in lsY:
-            iSplit, decision, szParent, bBranch, szImpurity, szSamples =lsX
+            iSplit, decision, szParent, bBranch, missingGoes, szImpurity, szSamples =lsX
             if type(iSplit) == int:
                 szSplit = '%d-%s' % (iSplit, decision)
                 dcParent[szSplit] = i_node
@@ -263,21 +270,21 @@ def dotgraph(decisionTree, dcHeadings):
                                         szImpurity,
                                         szSamples,
                                         decision))
-                
+
             if szParent != 'null':
                 if bBranch:
                     szAngle = '45'
-                    szHeadLabel = 'True'
+                    szHeadLabel = 'Yes'
                 else:
                     szAngle = '-45'
-                    szHeadLabel = 'False'
+                    szHeadLabel = 'No'
+                if missingGoes:
+                    szHeadLabel += ' or missing'
                 szSplit = '%d-%s' % (nSplit, szParent)
                 p_node = dcParent[szSplit]
-                if nSplit == 1:
-                    lsDot.append('%d -> %d [labeldistance=2.5, labelangle=%s, headlabel="%s"] ;' % (p_node,
-                                                        i_node, szAngle, szHeadLabel))
-                else:
-                    lsDot.append('%d -> %d ;' % (p_node, i_node))
+                lsDot.append('%d -> %d [labeldistance=2.5, labelangle=%s, headlabel="%s"] ;' % (p_node,
+                                                    i_node, szAngle, szHeadLabel))
+
             i_node += 1
     lsDot.append('}')
     dot_data = '\n'.join(lsDot)
@@ -287,6 +294,8 @@ def dotgraph(decisionTree, dcHeadings):
 def loadCSV(file, bHeader):
     """Loads a CSV file and converts all floats and ints into basic datatypes."""
     def convertTypes(s):
+        if str.lower(s) == 'null':
+            return math.nan
         s = s.strip()
         try:
             return float(s) if '.' in s else int(s)
@@ -334,7 +343,6 @@ def main():
     else:
         decisionTree = growDecisionTreeFrom(trainingData, entropy) 
     # prune(decisionTree, 0.8, notify=True) # notify, when a branch is pruned (one time in this example)
-    # decisionTree = growDecisionTreeFrom(trainingData, evaluationFunction=gini) # with gini
     plot(decisionTree, dcHeadings)
     dot_data = dotgraph(decisionTree, dcHeadings)
     graph = pydotplus.graph_from_dot_data(dot_data)
