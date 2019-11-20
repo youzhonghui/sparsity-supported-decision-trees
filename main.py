@@ -31,12 +31,12 @@ def main():
 
     dcHeadings, trainingData = loadCSV(cli_args.csv, cli_args.header)
     tree = DecisionTree()
-    tree.fit(trainingData, gini)
-    print(tree.treeToString(dcHeadings))
+    tree.fit(dcHeadings, trainingData, gini)
+    print(tree.treeToString())
     print(tree.classify([5.1, 3.5, math.nan, 1]))
 
-    tree.savePDF('output.pdf', dcHeadings)
-    tree.savePNG('output.png', dcHeadings)
+    tree.savePDF('output.pdf')
+    tree.savePNG('output.png')
 
 
 if __name__ == '__main__':

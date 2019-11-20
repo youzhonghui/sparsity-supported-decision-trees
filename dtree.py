@@ -147,13 +147,14 @@ class DecisionTree:
         else:
             return _DecisionTreeNode(results=uniqueCounts(rows), summary=dcY)
     
-    def fit(self, rows, evaluationFunction=entropy):
+    def fit(self, dcHeadings, rows, evaluationFunction=entropy):
         """Grows and then returns a binary decision tree.
             evaluationFunction: entropy or gini"""
+        self.dcHeadings = dcHeadings
         self.root = self._growDecisionTreeFrom(rows, evaluationFunction)
     
 
-    def treeToString(self, dcHeadings):
+    def treeToString(self):
         """Plots the obtained decision tree. """
         def toString(decisionTree, indent=''):
             if decisionTree.results != None:  # leaf node
@@ -163,8 +164,8 @@ class DecisionTree:
                 return szY
             else:
                 szCol = 'Column %s' % decisionTree.col
-                if szCol in dcHeadings:
-                    szCol = dcHeadings[szCol]
+                if szCol in self.dcHeadings:
+                    szCol = self.dcHeadings[szCol]
                 if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
                     decision = '%s >= %s?' % (szCol, decisionTree.value)
                 else:
@@ -178,17 +179,17 @@ class DecisionTree:
 
         return toString(self.root)
 
-    def savePDF(self, save_path, dcHeadings):
-        dot_data = self.dotgraph(dcHeadings)
+    def savePDF(self, save_path):
+        dot_data = self.dotgraph()
         graph = pydotplus.graph_from_dot_data(dot_data)
         graph.write_pdf(save_path)
 
-    def savePNG(self, save_path, dcHeadings):
-        dot_data = self.dotgraph(dcHeadings)
+    def savePNG(self, save_path):
+        dot_data = self.dotgraph()
         graph = pydotplus.graph_from_dot_data(dot_data)
         graph.write_png(save_path)
 
-    def dotgraph(self, dcHeadings):
+    def dotgraph(self):
         if self.root is None:
             print('The tree is empty!')
             return 
@@ -207,8 +208,8 @@ class DecisionTree:
                 return dcY
             else:
                 szCol = 'Column %s' % decisionTree.col
-                if szCol in dcHeadings:
-                        szCol = dcHeadings[szCol]
+                if szCol in self.dcHeadings:
+                        szCol = self.dcHeadings[szCol]
                 if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
                         decision = '%s >= %s' % (szCol, decisionTree.value)
                 else:
