@@ -3,7 +3,7 @@ clean:
 	rm output.pdf
 
 run-demo:
-	python dtree.py --csv ./data/fishiris.csv
+	python main.py --csv ./data/fishiris_with_null.csv
 
 install:
 	pip install -r requirements.txt
