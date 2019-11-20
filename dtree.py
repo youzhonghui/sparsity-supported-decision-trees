@@ -289,6 +289,18 @@ class DecisionTree:
 
         return self._node_explore(self.root, row)
 
+    def classifyFromDict(self, data, verbose=True):
+        # trans dict to row
+        col_num = sorted([int(k.split()[1]) for k in self.dcHeadings.keys()])
+        keys = [self.dcHeadings['Column %d' % c] for c in col_num[:-1]]
+        if verbose:
+            for col in keys:
+                if col not in data:
+                    print('Missing %s' % col)
+
+        row = [data[col] if col in data else math.nan for col in keys]
+        return self.classify(row)
+
 
 # def prune(tree, minGain, evaluationFunction=entropy, notify=False):
 #     """Prunes the obtained tree according to the minimal gain (entropy or Gini). """
@@ -309,82 +321,3 @@ class DecisionTree:
 #             if notify: print('A branch was pruned: gain = %f' % delta)
 #             tree.trueBranch, tree.falseBranch = None, None
 #             tree.results = uniqueCounts(tb + fb)
-
-
-# def classify(observations, tree, dataMissing=False):
-#     """Classifies the observationss according to the tree.
-#     dataMissing: true or false if data are missing or not. """
-
-#     def classifyWithoutMissingData(observations, tree):
-#         if tree.results != None:  # leaf
-#             return tree.results
-#         else:
-#             v = observations[tree.col]
-#             branch = None
-#             if isinstance(v, int) or isinstance(v, float):
-#                 if v >= tree.value: branch = tree.trueBranch
-#                 else: branch = tree.falseBranch
-#             else:
-#                 if v == tree.value: branch = tree.trueBranch
-#                 else: branch = tree.falseBranch
-#         return classifyWithoutMissingData(observations, branch)
-
-
-#     def classifyWithMissingData(observations, tree):
-#         if tree.results != None:  # leaf
-#             return tree.results
-#         else:
-#             v = observations[tree.col]
-#             if v == None:
-#                 tr = classifyWithMissingData(observations, tree.trueBranch)
-#                 fr = classifyWithMissingData(observations, tree.falseBranch)
-#                 tcount = sum(tr.values())
-#                 fcount = sum(fr.values())
-#                 tw = float(tcount)/(tcount + fcount)
-#                 fw = float(fcount)/(tcount + fcount)
-#                 result = defaultdict(int) # Problem description: http://blog.ludovf.net/python-collections-defaultdict/
-#                 for k, v in tr.items(): result[k] += v*tw
-#                 for k, v in fr.items(): result[k] += v*fw
-#                 return dict(result)
-#             else:
-#                 branch = None
-#                 if isinstance(v, int) or isinstance(v, float):
-#                     if v >= tree.value: branch = tree.trueBranch
-#                     else: branch = tree.falseBranch
-#                 else:
-#                     if v == tree.value: branch = tree.trueBranch
-#                     else: branch = tree.falseBranch
-#             return classifyWithMissingData(observations, branch)
-
-#     # function body
-#     if dataMissing:
-#         return classifyWithMissingData(observations, tree)
-#     else:
-#         return classifyWithoutMissingData(observations, tree)
-
-
-# def plot(decisionTree, dcHeadings):
-#     """Plots the obtained decision tree. """
-#     def toString(decisionTree, indent=''):
-#         if decisionTree.results != None:  # leaf node
-#             lsX = [(x, y) for x, y in decisionTree.results.items()]
-#             lsX.sort()
-#             szY = ', '.join(['%s: %s' % (x, y) for x, y in lsX])
-#             return szY
-#         else:
-#             szCol = 'Column %s' % decisionTree.col
-#             if szCol in dcHeadings:
-#                 szCol = dcHeadings[szCol]
-#             if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
-#                 decision = '%s >= %s?' % (szCol, decisionTree.value)
-#             else:
-#                 decision = '%s == %s?' % (szCol, decisionTree.value)
-
-#             leftText = 'yes, missing -> ' if decisionTree.missingDirection else 'yes -> '
-#             rightText = 'no, missing -> ' if not decisionTree.missingDirection else 'no -> '
-#             trueBranch = indent + leftText + toString(decisionTree.trueBranch, indent + '\t\t')
-#             falseBranch = indent + rightText + toString(decisionTree.falseBranch, indent + '\t\t')
-#             return (decision + '\n' + trueBranch + '\n' + falseBranch)
-
-#     print(toString(decisionTree))
-

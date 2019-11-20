@@ -34,6 +34,12 @@ def main():
     tree.fit(dcHeadings, trainingData, gini)
     print(tree.treeToString())
     print(tree.classify([5.1, 3.5, math.nan, 1]))
+    print(tree.classifyFromDict({
+        "SepalLength": 5.1,
+        "SepalWidth": 3.5,
+        "PetalLength": 11,
+        "PetalWidth": 1
+    }))
 
     tree.savePDF('output.pdf')
     tree.savePNG('output.png')
