@@ -79,14 +79,10 @@ def entropy(rows):
 def gini(rows):
     total = len(rows)
     counts = uniqueCounts(rows)
-    imp = 0.0
+    imp = 1.0
 
-    for k1 in counts:
-        p1 = float(counts[k1])/total
-        for k2 in counts:
-            if k1 == k2: continue
-            p2 = float(counts[k2])/total
-            imp += p1*p2
+    for k in counts:
+        imp -= (float(counts[k]) / total)**2
     return imp
 
 
