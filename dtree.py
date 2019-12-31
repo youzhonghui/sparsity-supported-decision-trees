@@ -10,6 +10,8 @@ import math
 import csv
 from collections import defaultdict
 import pydotplus
+import numpy as np
+import pandas as pd
 
 # --------------------------------- utils ----------------------------------
 
@@ -32,57 +34,40 @@ def variance(rows):
     return variance
 
 
-def divideSet(rows, column, value, missingDirection):
-    splittingFunction = None
+def divideSet(data, column, value, missingDirection):
+    splitter = None
     if isinstance(value, int) or isinstance(value, float): # for int and float values
-        splittingFunction = lambda row : row[column] >= value or ((missingDirection == True) and (row[column] is math.nan))
+        splitter = lambda candidate : candidate >= value or ((missingDirection == True) and np.isnan(candidate))
     else: # for strings
-        splittingFunction = lambda row : row[column] == value
-    list1 = [row for row in rows if splittingFunction(row)]
-    list2 = [row for row in rows if not splittingFunction(row)]
+        splitter = lambda candidate : candidate == value
+
+    index = data[column].apply(splitter)
+    list1 = data[index]
+    list2 = data[~index]
     return (list1, list2)
-
-
-def loadCSV(file, bHeader):
-    """Loads a CSV file and converts all floats and ints into basic datatypes."""
-    def convertTypes(s):
-        if str.lower(s) == 'null':
-            return math.nan
-        s = s.strip()
-        try:
-            return float(s) if '.' in s else int(s)
-        except ValueError:
-            return s
-
-    reader = csv.reader(open(file, 'r'))
-    dcHeader = {}
-    if bHeader:
-        lsHeader = next(reader)
-        for i, szY in enumerate(lsHeader):
-                szCol = 'Column %d' % i
-                dcHeader[szCol] = str(szY)
-    return dcHeader, [[convertTypes(item) for item in row] for row in reader]
 
 # ---------------------- decision tree related -------------------------------
 
-def entropy(rows):
-    log2 = lambda x: math.log(x)/math.log(2)
-    results = uniqueCounts(rows)
+# def entropy(rows):
+#     log2 = lambda x: math.log(x)/math.log(2)
+#     results = uniqueCounts(rows)
 
-    entr = 0.0
-    for r in results:
-        p = float(results[r])/len(rows)
-        entr -= p*log2(p)
-    return entr
+#     entr = 0.0
+#     for r in results:
+#         p = float(results[r])/len(rows)
+#         entr -= p*log2(p)
+#     return entr
 
 
-def gini(rows):
-    total = len(rows)
-    counts = uniqueCounts(rows)
-    imp = 1.0
+def gini(targets, weights):
+    total = len(targets)
+    counts = dict(targets.value_counts())
+    imp = 0.0
 
     for k in counts:
-        imp -= (float(counts[k]) / total)**2
+        w = weights[k] if k in weights else 1
+        p = float(counts[k]) / total
+        imp += w * p * (1 - p)
     return imp
 
 
@@ -103,51 +88,59 @@ class DecisionTree:
         super().__init__()
 
         self.root = None
-    
-    @classmethod
-    def _growDecisionTreeFrom(cls, rows, evaluationFunction):
-        if len(rows) == 0: return _DecisionTreeNode()
-        currentScore = evaluationFunction(rows)
+
+    def _growDecisionTreeFrom(self, data, evaluationFunction):
+        if len(data) == 0:
+            return _DecisionTreeNode()
+        currentScore = evaluationFunction(data[self.target_column], self.cls_weights)
 
         bestGain = 0.0
         bestAttribute = None
         bestSets = None
 
-        columnCount = len(rows[0]) - 1  # last column is the result/target column
+        columnCount = len(self.feature_columns)
         for missingDirection in [True, False]:
-            for col in range(0, columnCount):
-                columnValues = [row[col] for row in rows]
+            for col in self.feature_columns:
+                # remove the nan values
+                unique = {x for x in set(data[col]) if x == x}
+                for value in unique:
+                    (set1, set2) = divideSet(data, col, value, missingDirection)
 
-                #unique values
-                lsUnique = list(set(columnValues))
-                if math.nan in lsUnique:
-                    lsUnique.remove(math.nan)
-
-                for value in lsUnique:
-                    (set1, set2) = divideSet(rows, col, value, missingDirection)
-
-                    # Gain -- Entropy or Gini
-                    p = float(len(set1)) / len(rows)
-                    gain = currentScore - p*evaluationFunction(set1) - (1-p)*evaluationFunction(set2)
-                    if gain>bestGain and len(set1)>0 and len(set2)>0:
+                    p = float(len(set1)) / len(data)
+                    gain = currentScore - p * evaluationFunction(set1[self.target_column], self.cls_weights) - \
+                                (1-p) * evaluationFunction(set2[self.target_column], self.cls_weights)
+                    if gain > bestGain and len(set1) > 0 and len(set2) > 0:
                         bestGain = gain
                         bestAttribute = (col, value, missingDirection)
                         bestSets = (set1, set2)
 
-        dcY = {'impurity' : '%.3f' % currentScore, 'samples' : '%d' % len(rows)}
+        stats = []
+        for k, v in dict(data[self.target_column].value_counts()).items():
+            stats.append('%s: %d' % (k, v))
+        dcY = {'stats' : '/'.join(stats), 'samples' : '%d' % len(data)}
         if bestGain > 0:
-            trueBranch = cls._growDecisionTreeFrom(bestSets[0], evaluationFunction)
-            falseBranch = cls._growDecisionTreeFrom(bestSets[1], evaluationFunction)
+            trueBranch = self._growDecisionTreeFrom(bestSets[0], evaluationFunction)
+            falseBranch = self._growDecisionTreeFrom(bestSets[1], evaluationFunction)
             return _DecisionTreeNode(col=bestAttribute[0], value=bestAttribute[1], trueBranch=trueBranch,
                                 falseBranch=falseBranch, summary=dcY, missingDirection=bestAttribute[2])
         else:
-            return _DecisionTreeNode(results=uniqueCounts(rows), summary=dcY)
+            return _DecisionTreeNode(results=dict(data[self.target_column].value_counts()), summary=dcY)
     
-    def fit(self, dcHeadings, rows, evaluationFunction=entropy):
+    def fit(self, data, cls_weights, evaluationFunction=gini):
         """Grows and then returns a binary decision tree.
             evaluationFunction: entropy or gini"""
-        self.dcHeadings = dcHeadings
-        self.root = self._growDecisionTreeFrom(rows, evaluationFunction)
+        self.data = data.copy()
+        self.data.columns = self.data.columns.str.strip()
+
+        for col in self.data.columns:
+            if self.data[col].dtype == np.dtype('O'):
+                self.data[col] = self.data[col].str.strip()
+
+        self.feature_columns = self.data.columns.tolist()[:-1]
+        self.target_column = self.data.columns.tolist()[-1]
+        self.cls_weights = cls_weights
+
+        self.root = self._growDecisionTreeFrom(self.data, evaluationFunction)
     
 
     def treeToString(self):
@@ -159,13 +152,10 @@ class DecisionTree:
                 szY = ', '.join(['%s: %s' % (x, y) for x, y in lsX])
                 return szY
             else:
-                szCol = 'Column %s' % decisionTree.col
-                if szCol in self.dcHeadings:
-                    szCol = self.dcHeadings[szCol]
                 if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
-                    decision = '%s >= %s?' % (szCol, decisionTree.value)
+                    decision = '%s >= %s?' % (decisionTree.col, decisionTree.value)
                 else:
-                    decision = '%s == %s?' % (szCol, decisionTree.value)
+                    decision = '%s == %s?' % (decisionTree.col, decisionTree.value)
 
                 leftText = 'yes, missing -> ' if decisionTree.missingDirection else 'yes -> '
                 rightText = 'no, missing -> ' if not decisionTree.missingDirection else 'no -> '
@@ -199,21 +189,18 @@ class DecisionTree:
                 szY = ', '.join(['%s: %s' % (x, y) for x, y in lsX])
                 dcY = {"name": szY, "parent" : szParent}
                 dcSummary = decisionTree.summary
-                dcNodes[iSplit].append(['leaf', dcY['name'], szParent, bBranch, missingGoes, dcSummary['impurity'],
+                dcNodes[iSplit].append(['leaf', dcY['name'], szParent, bBranch, missingGoes, dcSummary['stats'],
                                         dcSummary['samples']])
                 return dcY
             else:
-                szCol = 'Column %s' % decisionTree.col
-                if szCol in self.dcHeadings:
-                        szCol = self.dcHeadings[szCol]
                 if isinstance(decisionTree.value, int) or isinstance(decisionTree.value, float):
-                        decision = '%s >= %s' % (szCol, decisionTree.value)
+                        decision = '%s >= %s' % (decisionTree.col, decisionTree.value)
                 else:
-                        decision = '%s == %s' % (szCol, decisionTree.value)
+                        decision = '%s == %s' % (decisionTree.col, decisionTree.value)
                 trueBranch = toString(iSplit+1, decisionTree.trueBranch, True, decisionTree.missingDirection == True, decision, indent + '\t\t')
                 falseBranch = toString(iSplit+1, decisionTree.falseBranch, False, decisionTree.missingDirection == False, decision, indent + '\t\t')
                 dcSummary = decisionTree.summary
-                dcNodes[iSplit].append([iSplit+1, decision, szParent, bBranch, missingGoes, dcSummary['impurity'],
+                dcNodes[iSplit].append([iSplit+1, decision, szParent, bBranch, missingGoes, dcSummary['stats'],
                                         dcSummary['samples']])
                 return
 
@@ -227,17 +214,17 @@ class DecisionTree:
         for nSplit in range(len(dcNodes)):
             lsY = dcNodes[nSplit]
             for lsX in lsY:
-                iSplit, decision, szParent, bBranch, missingGoes, szImpurity, szSamples =lsX
+                iSplit, decision, szParent, bBranch, missingGoes, stats, szSamples =lsX
                 if type(iSplit) == int:
                     szSplit = '%d-%s' % (iSplit, decision)
                     dcParent[szSplit] = i_node
-                    lsDot.append('%d [label=<%s<br/>impurity %s<br/>samples %s>, fillcolor="#e5813900"] ;' % (i_node,
+                    lsDot.append('%d [label=<%s<br/>%s<br/>samples %s>, fillcolor="#e5813900"] ;' % (i_node,
                                             decision.replace('>=', '&ge;').replace('?', ''),
-                                            szImpurity,
+                                            stats,
                                             szSamples))
                 else:
-                    lsDot.append('%d [label=<impurity %s<br/>samples %s<br/>class %s>, fillcolor="#e5813900"] ;' % (i_node,
-                                            szImpurity,
+                    lsDot.append('%d [label=<%s<br/>samples %s<br/>class %s>, fillcolor="#e5813900"] ;' % (i_node,
+                                            stats,
                                             szSamples,
                                             decision))
 
@@ -268,7 +255,7 @@ class DecisionTree:
             v = row[node.col]
             branch = None
 
-            if v is math.nan:
+            if np.isnan(v):
                 branch = node.trueBranch if node.missingDirection else node.falseBranch
             elif isinstance(v, int) or isinstance(v, float):
                 if v >= node.value:
@@ -279,23 +266,13 @@ class DecisionTree:
                 branch = node.trueBranch if v == node.value else node.falseBranch
         return cls._node_explore(branch, row)
 
-    def classify(self, row):
+    def classify(self, data):
         """Classifies the observationss according to the tree.
         dataMissing: true or false if data are missing or not. """
-
-        return self._node_explore(self.root, row)
-
-    def classifyFromDict(self, data, verbose=True):
-        # trans dict to row
-        col_num = sorted([int(k.split()[1]) for k in self.dcHeadings.keys()])
-        keys = [self.dcHeadings['Column %d' % c] for c in col_num[:-1]]
-        if verbose:
-            for col in keys:
-                if col not in data:
-                    print('Missing %s' % col)
-
-        row = [data[col] if col in data else math.nan for col in keys]
-        return self.classify(row)
+        ans = []
+        for idx, row in data.iterrows():
+            ans.append(self._node_explore(self.root, row))
+        return ans
 
 
 # def prune(tree, minGain, evaluationFunction=entropy, notify=False):
