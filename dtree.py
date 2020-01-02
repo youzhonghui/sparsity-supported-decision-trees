@@ -322,8 +322,6 @@ class DecisionTree:
             node_to_prune, alpha = pruned_list[i]
             if node_to_prune is not None:
                 node_to_prune.leaf = True
-        print(pruned_list)
-        print(error_on_val)
         
         return alpha
 
