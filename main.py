@@ -25,14 +25,20 @@ def main():
         print('The evaluation function should be gini or entropy')
         exit(0)
 
-    training_data = pd.read_csv(cli_args.csv)
+    data = pd.read_csv(cli_args.csv)
+    train = data.sample(frac=0.75, random_state=0)
+    test = pd.concat([train, data]).drop_duplicates(keep=False)
+
     class_weights = {
         'setosa': 1,
         'versicolor': 1,
         'virginica': 1
     }
     tree = DecisionTree()
-    tree.fit(training_data, class_weights, gini)
+    tree.fit(train, class_weights, gini)
+    # print(tree._error_rate(tree.root))
+    print(tree._count_leaf(tree.root))
+    tree.prune(test)
 
     print(tree.treeToString())
 

@@ -15,25 +15,6 @@ import pandas as pd
 
 # --------------------------------- utils ----------------------------------
 
-def uniqueCounts(rows):
-    results = {}
-    for row in rows:
-        #response variable is in the last column
-        r = row[-1]
-        if r not in results: results[r] = 0
-        results[r] += 1
-    return results
-
-
-def variance(rows):
-    if len(rows) == 0: return 0
-    data = [float(row[len(row) - 1]) for row in rows]
-    mean = sum(data) / len(data)
-
-    variance = sum([(d-mean)**2 for d in data]) / len(data)
-    return variance
-
-
 def divideSet(data, column, value, missingDirection):
     splitter = None
     if isinstance(value, int) or isinstance(value, float): # for int and float values
@@ -47,17 +28,6 @@ def divideSet(data, column, value, missingDirection):
     return (list1, list2)
 
 # ---------------------- decision tree related -------------------------------
-
-# def entropy(rows):
-#     log2 = lambda x: math.log(x)/math.log(2)
-#     results = uniqueCounts(rows)
-
-#     entr = 0.0
-#     for r in results:
-#         p = float(results[r])/len(rows)
-#         entr -= p*log2(p)
-#     return entr
-
 
 def gini(targets, weights):
     total = len(targets)
@@ -73,14 +43,16 @@ def gini(targets, weights):
 
 class _DecisionTreeNode:
     """Binary tree implementation with true and false branch. """
-    def __init__(self, col=-1, value=None, trueBranch=None, falseBranch=None, results=None, summary=None, missingDirection=True):
+    def __init__(self, col=-1, value=None, trueBranch=None, falseBranch=None, results=None, summary=None, missingDirection=True, leaf=False, samples_num=0):
         self.col = col
         self.value = value
         self.missingDirection = missingDirection
         self.trueBranch = trueBranch
         self.falseBranch = falseBranch
-        self.results = results # None for nodes, not None for leaves
+        self.results = results  # None for nodes, not None for leaves
         self.summary = summary
+        self.leaf = leaf        # the sub tree node can be leaf if it is pruned
+        self.samples_num = samples_num
 
 
 class DecisionTree:
@@ -91,7 +63,8 @@ class DecisionTree:
 
     def _growDecisionTreeFrom(self, data, evaluationFunction):
         if len(data) == 0:
-            return _DecisionTreeNode()
+            return None
+
         currentScore = evaluationFunction(data[self.target_column], self.cls_weights)
 
         bestGain = 0.0
@@ -121,12 +94,15 @@ class DecisionTree:
         if bestGain > 0:
             trueBranch = self._growDecisionTreeFrom(bestSets[0], evaluationFunction)
             falseBranch = self._growDecisionTreeFrom(bestSets[1], evaluationFunction)
+            pair = dict(data[self.target_column].value_counts())
             return _DecisionTreeNode(col=bestAttribute[0], value=bestAttribute[1], trueBranch=trueBranch,
-                                falseBranch=falseBranch, summary=dcY, missingDirection=bestAttribute[2])
+                                falseBranch=falseBranch, results=dict((self.index_to_class[k], v) for k, v in pair.items()),
+                                summary=dcY, missingDirection=bestAttribute[2], samples_num=len(data))
         else:
             pair = dict(data[self.target_column].value_counts())
-            return _DecisionTreeNode(results=dict((self.index_to_class[k], v) for k, v in pair.items()), summary=dcY)
-    
+            return _DecisionTreeNode(results=dict((self.index_to_class[k], v) for k, v in pair.items()),
+                                summary=dcY, leaf=True, samples_num=len(data))
+
     def fit(self, data, cls_weights, evaluationFunction=gini):
         """Grows and then returns a binary decision tree.
             evaluationFunction: entropy or gini"""
@@ -156,7 +132,7 @@ class DecisionTree:
     def treeToString(self):
         """Plots the obtained decision tree. """
         def toString(decisionTree, indent=''):
-            if decisionTree.results != None:  # leaf node
+            if decisionTree.leaf:  # leaf node
                 lsX = [(x, y) for x, y in decisionTree.results.items()]
                 lsX.sort()
                 szY = ', '.join(['%s: %s' % (x, y) for x, y in lsX])
@@ -193,13 +169,13 @@ class DecisionTree:
         dcNodes = defaultdict(list)
         """Plots the obtained decision tree. """
         def toString(iSplit, decisionTree, bBranch, missingGoes, szParent = "null", indent=''):
-            if decisionTree.results != None:  # leaf node
+            if decisionTree.leaf:  # leaf node
                 lsX = [(x, y) for x, y in decisionTree.results.items()]
                 lsX.sort()
                 szY = ', '.join(['%s: %s' % (x, y) for x, y in lsX])
                 dcY = {"name": szY, "parent" : szParent}
                 dcSummary = decisionTree.summary
-                dcNodes[iSplit].append(['leaf', dcY['name'], szParent, bBranch, missingGoes, dcSummary['stats'],
+                dcNodes[iSplit].append(['leaf', max(decisionTree.results, key=decisionTree.results.get), szParent, bBranch, missingGoes, dcSummary['stats'],
                                         dcSummary['samples']])
                 return dcY
             else:
@@ -259,8 +235,8 @@ class DecisionTree:
 
     @classmethod
     def _node_explore(cls, node, row):
-        if node.results is not None:    # leaf
-            return node.results
+        if node.leaf or ((node.trueBranch is None) and (node.falseBranch is None)):
+            return max(node.results, key=node.results.get)
         else:
             v = row[node.col]
             branch = None
@@ -284,6 +260,72 @@ class DecisionTree:
             ans.append(self._node_explore(self.root, row))
         return ans
 
+    def _error_rate(self, tree, view_as_leaf=False):
+        if tree.leaf or view_as_leaf:
+            output = max(tree.results, key=tree.results.get)
+            return (1 - (float(tree.results[output]) / tree.samples_num))
+
+        tr = self._error_rate(tree.trueBranch) * tree.trueBranch.samples_num / tree.samples_num
+        fr = self._error_rate(tree.falseBranch) * tree.falseBranch.samples_num / tree.samples_num
+        return tr + fr
+
+    def _count_leaf(self, tree):
+        if tree.leaf:
+            return 1
+        return self._count_leaf(tree.trueBranch) + self._count_leaf(tree.falseBranch)
+
+    def _clear_prune(self, tree):
+        if tree.trueBranch is None and tree.falseBranch is None:
+            tree.leaf = True
+        else:
+            tree.leaf = False
+            self._clear_prune(tree.trueBranch)
+            self._clear_prune(tree.falseBranch)
+
+    def prune(self, validation_set):
+        self._clear_prune(self.root)
+        pruned_list = [(None, 0)]
+        while not self.root.leaf:
+            g = {}
+            def _explore(node):
+                if node.leaf:
+                    return
+                g[node] = (self._error_rate(node, view_as_leaf=True) - self._error_rate(node)) / (self._count_leaf(node) - 1)
+                if node.trueBranch is not None:
+                    _explore(node.trueBranch)
+                if node.falseBranch is not None:
+                    _explore(node.falseBranch)
+            _explore(self.root)
+
+            node_to_prune = min(g, key=g.get)
+            pruned_list.append((node_to_prune, g[node_to_prune]))
+            node_to_prune.leaf = True
+        
+        self._clear_prune(self.root)
+        error_on_val = []
+        ground_truth = validation_set[self.target_column]
+        for node_to_prune, _ in pruned_list:
+            if node_to_prune is not None:
+                node_to_prune.leaf = True
+
+            res = self.classify(validation_set)
+            error_rate = np.sum([1 if a != b else 0 for a, b in zip(res, ground_truth)]) / len(ground_truth)
+            error_on_val.append(error_rate)
+
+        self._clear_prune(self.root)
+        best, idx, alpha = np.inf, 0, 0
+        for i, v in enumerate(error_on_val):
+            if v <= best:
+                idx = i
+                best = v
+        for i in range(idx + 1):
+            node_to_prune, alpha = pruned_list[i]
+            if node_to_prune is not None:
+                node_to_prune.leaf = True
+        print(pruned_list)
+        print(error_on_val)
+        
+        return alpha
 
 # def prune(tree, minGain, evaluationFunction=entropy, notify=False):
 #     """Prunes the obtained tree according to the minimal gain (entropy or Gini). """
