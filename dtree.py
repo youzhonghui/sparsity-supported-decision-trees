@@ -61,7 +61,7 @@ def divideSet(data, column, value, missingDirection):
 
 def gini(targets, weights):
     total = len(targets)
-    counts = dict(targets.value_counts())
+    counts = dict((k, v) for k, v in enumerate(np.bincount(targets.to_numpy())))
     imp = 0.0
 
     for k in counts:
@@ -116,7 +116,7 @@ class DecisionTree:
 
         stats = []
         for k, v in dict(data[self.target_column].value_counts()).items():
-            stats.append('%s: %d' % (k, v))
+            stats.append('%s: %d' % (self.index_to_class[k], v))
         dcY = {'stats' : '/'.join(stats), 'samples' : '%d' % len(data)}
         if bestGain > 0:
             trueBranch = self._growDecisionTreeFrom(bestSets[0], evaluationFunction)
@@ -124,7 +124,8 @@ class DecisionTree:
             return _DecisionTreeNode(col=bestAttribute[0], value=bestAttribute[1], trueBranch=trueBranch,
                                 falseBranch=falseBranch, summary=dcY, missingDirection=bestAttribute[2])
         else:
-            return _DecisionTreeNode(results=dict(data[self.target_column].value_counts()), summary=dcY)
+            pair = dict(data[self.target_column].value_counts())
+            return _DecisionTreeNode(results=dict((self.index_to_class[k], v) for k, v in pair.items()), summary=dcY)
     
     def fit(self, data, cls_weights, evaluationFunction=gini):
         """Grows and then returns a binary decision tree.
@@ -138,7 +139,16 @@ class DecisionTree:
 
         self.feature_columns = self.data.columns.tolist()[:-1]
         self.target_column = self.data.columns.tolist()[-1]
-        self.cls_weights = cls_weights
+
+        elm = list(set(self.data[self.target_column].to_list()))
+        self.data[self.target_column] = self.data[self.target_column].apply(lambda x: elm.index(x))
+        self.index_to_class = dict((idx, e) for idx, e in enumerate(elm))
+
+        for k in elm:
+            if k not in cls_weights:
+                cls_weights[k] = 1
+
+        self.cls_weights = dict((elm.index(k), v) for k, v in cls_weights.items())
 
         self.root = self._growDecisionTreeFrom(self.data, evaluationFunction)
     
