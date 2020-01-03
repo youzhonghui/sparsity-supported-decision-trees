@@ -233,6 +233,8 @@ class DecisionTree:
 
     def savePDF(self, save_path):
         dot_data = self.dotgraph()
+        with open('./output.dot', 'w') as fp:
+            fp.write(dot_data)
         graph = pydotplus.graph_from_dot_data(dot_data)
         graph.write_pdf(save_path)
 
@@ -277,7 +279,7 @@ class DecisionTree:
         toString(0, self.root, None, None)
         lsDot = ['digraph Tree {',
                     'node [shape=box, style="filled, rounded", color="black", fontname=helvetica] ;',
-                    'edge [fontname=helvetica] ;'
+                    'edge [fontname=helvetica, fontsize=14] ;'
         ]
         i_node = 0
         dcParent = {}
@@ -293,7 +295,7 @@ class DecisionTree:
                                             stats,
                                             szSamples))
                 else:
-                    lsDot.append('%d [label=<%s<br/>samples %s<br/>class %s>, fillcolor="#e5813900"] ;' % (i_node,
+                    lsDot.append('%d [label=<%s<br/>samples %s<br/>class %s>, fillcolor="#dddddd"] ;' % (i_node,
                                             stats,
                                             szSamples,
                                             decision))
