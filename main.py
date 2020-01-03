@@ -38,7 +38,7 @@ def main():
     tree.fit(train, class_weights, gini)
     # print(tree._error_rate(tree.root))
     print(tree._count_leaf(tree.root))
-    tree.prune(test, 0.09)
+    # tree.prune(test, 0.0)
 
     print(tree.treeToString())
 

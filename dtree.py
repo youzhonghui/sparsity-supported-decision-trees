@@ -128,12 +128,11 @@ class DecisionTree:
             falseBranch = self._growDecisionTreeFrom(bestSets[1], evaluationFunction)
             pair = dict(data[self.target_column].value_counts())
             return _DecisionTreeNode(col=bestAttribute[0], value=bestAttribute[1], trueBranch=trueBranch,
-                                falseBranch=falseBranch, results=dict((self.index_to_class[k], v) for k, v in pair.items()),
+                                falseBranch=falseBranch, results=pair,
                                 summary=dcY, missingDirection=bestAttribute[2], samples_num=len(data))
         else:
             pair = dict(data[self.target_column].value_counts())
-            return _DecisionTreeNode(results=dict((self.index_to_class[k], v) for k, v in pair.items()),
-                                summary=dcY, leaf=True, samples_num=len(data))
+            return _DecisionTreeNode(results=pair, summary=dcY, leaf=True, samples_num=len(data))
 
     def addSample(self, sample):
         target = int(sample[self.target_column])
@@ -368,6 +367,9 @@ class DecisionTree:
             self._clear_prune(tree.falseBranch)
 
     def prune(self, validation_set, min_alpha=0):
+        '''
+            TODO: Bug here
+        '''
         self._clear_prune(self.root)
         pruned_list = [(None, 0)]
         while not self.root.leaf:
