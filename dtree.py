@@ -263,10 +263,10 @@ class DecisionTree:
     def _error_rate(self, tree, view_as_leaf=False):
         if tree.leaf or view_as_leaf:
             output = max(tree.results, key=tree.results.get)
-            return (1 - (float(tree.results[output]) / tree.samples_num))
+            return (1 - (float(tree.results[output]) / tree.samples_num)) * tree.samples_num / tree.samples_num
 
-        tr = self._error_rate(tree.trueBranch) * tree.trueBranch.samples_num / tree.samples_num
-        fr = self._error_rate(tree.falseBranch) * tree.falseBranch.samples_num / tree.samples_num
+        tr = self._error_rate(tree.trueBranch) 
+        fr = self._error_rate(tree.falseBranch)
         return tr + fr
 
     def _count_leaf(self, tree):
@@ -282,7 +282,7 @@ class DecisionTree:
             self._clear_prune(tree.trueBranch)
             self._clear_prune(tree.falseBranch)
 
-    def prune(self, validation_set):
+    def prune(self, validation_set, min_alpha=0):
         self._clear_prune(self.root)
         pruned_list = [(None, 0)]
         while not self.root.leaf:
@@ -315,6 +315,11 @@ class DecisionTree:
         self._clear_prune(self.root)
         best, idx, alpha = np.inf, 0, 0
         for i, v in enumerate(error_on_val):
+            _, alpha = pruned_list[i]
+            if alpha < min_alpha:
+                idx = i
+                continue
+
             if v <= best:
                 idx = i
                 best = v
