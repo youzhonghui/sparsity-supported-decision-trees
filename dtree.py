@@ -12,6 +12,7 @@ from collections import defaultdict
 import pydotplus
 import numpy as np
 import pandas as pd
+import re
 
 # --------------------------------- utils ----------------------------------
 
@@ -26,6 +27,37 @@ def divideSet(data, column, value, missingDirection):
     list1 = data[index]
     list2 = data[~index]
     return (list1, list2)
+
+def parse(str_list):
+    res = {}
+    for sentence in str_list:
+        washed = sentence.strip()
+        if len(washed) == 0:
+            continue
+
+        node_index = int(re.match('(\d+):', washed).group(1))
+        if 'leaf' in washed:
+            val_str = re.search('leaf=([\-\.0-9]+)', washed).group(1)
+            res[node_index] = {
+                'leaf': True,
+                'condition': None,
+                'threshold': None,
+                'true_node': None,
+                'false_node': None,
+                'missing_node': None
+            }
+        else:
+            cond, val_str = re.search('\[(.*)\]', washed).group(1).split('<')
+            res[node_index] = {
+                'leaf': False,
+                'condition': cond,
+                'threshold': float(val_str),
+                'true_node': int(re.search('no=(\d+)', washed).group(1)),     # using >= in our tree node
+                'false_node': int(re.search('yes=(\d+)', washed).group(1)),
+                'missing_node': int(re.search('missing=(\d+)', washed).group(1))
+            }
+
+    return res
 
 # ---------------------- decision tree related -------------------------------
 
@@ -103,9 +135,53 @@ class DecisionTree:
             return _DecisionTreeNode(results=dict((self.index_to_class[k], v) for k, v in pair.items()),
                                 summary=dcY, leaf=True, samples_num=len(data))
 
-    def fit(self, data, cls_weights, evaluationFunction=gini):
-        """Grows and then returns a binary decision tree.
-            evaluationFunction: entropy or gini"""
+    def addSample(self, sample):
+        target = int(sample[self.target_column])
+        def _pass(node):
+            node.samples_num += 1
+            if target not in node.results:
+                node.results[target] = 0
+            node.results[target] += 1
+
+            if node.leaf:
+                return
+
+            if (np.isnan(sample[node.col]) and node.missingDirection) or sample[node.col] >= node.value:
+                _pass(node.trueBranch)
+            else:
+                _pass(node.falseBranch)
+
+        _pass(self.root)
+
+    def buildFromString(self, str_list, data=None, cls_weights={}):
+        '''
+            make sure str_list from xgboost
+        '''
+        info = parse(str_list)
+        node_dict = {}
+        for node_index in range(max(info), -1, -1):
+            tmp = info[node_index]
+            node = _DecisionTreeNode(
+                leaf = tmp['leaf'],
+                col = tmp['condition'],
+                value = tmp['threshold'],
+                results = {0: 0, 1: 0},
+                samples_num = 0,
+                summary = {'stats' : 0, 'samples' : 0}
+            )
+            if tmp['true_node'] is not None:
+                node.trueBranch = node_dict[tmp['true_node']]
+                node.falseBranch = node_dict[tmp['false_node']]
+                node.missingDirection = (node_dict[tmp['missing_node']] == node_dict[tmp['true_node']])
+            node_dict[node_index] = node
+
+        self.root = node_dict[0]
+        if data is not None:
+            self._prepare_data(data, cls_weights)
+            for idx, row in self.data.iterrows():
+                self.addSample(row)
+
+    def _prepare_data(self, data, cls_weights):
         self.data = data.copy()
         self.data.columns = self.data.columns.str.strip()
 
@@ -123,15 +199,20 @@ class DecisionTree:
         for k in elm:
             if k not in cls_weights:
                 cls_weights[k] = 1
-
         self.cls_weights = dict((elm.index(k), v) for k, v in cls_weights.items())
 
+    def fit(self, data, cls_weights, evaluationFunction=gini):
+        """Grows and then returns a binary decision tree.
+            evaluationFunction: entropy or gini"""
+        self._prepare_data(data, cls_weights)
         self.root = self._growDecisionTreeFrom(self.data, evaluationFunction)
     
-
     def treeToString(self):
         """Plots the obtained decision tree. """
         def toString(decisionTree, indent=''):
+            decisionTree.summary['samples'] = decisionTree.samples_num
+            decisionTree.summary['stats'] = '/'.join(['%s: %d' % (self.index_to_class[k], v) for k, v in decisionTree.results.items()])
+
             if decisionTree.leaf:  # leaf node
                 lsX = [(x, y) for x, y in decisionTree.results.items()]
                 lsX.sort()
@@ -169,13 +250,17 @@ class DecisionTree:
         dcNodes = defaultdict(list)
         """Plots the obtained decision tree. """
         def toString(iSplit, decisionTree, bBranch, missingGoes, szParent = "null", indent=''):
+            decisionTree.summary['samples'] = decisionTree.samples_num
+            decisionTree.summary['stats'] = '/'.join(['%s: %d' % (self.index_to_class[k], v) for k, v in decisionTree.results.items()])
+
             if decisionTree.leaf:  # leaf node
                 lsX = [(x, y) for x, y in decisionTree.results.items()]
                 lsX.sort()
                 szY = ', '.join(['%s: %s' % (x, y) for x, y in lsX])
                 dcY = {"name": szY, "parent" : szParent}
                 dcSummary = decisionTree.summary
-                dcNodes[iSplit].append(['leaf', max(decisionTree.results, key=decisionTree.results.get), szParent, bBranch, missingGoes, dcSummary['stats'],
+                score = dict([(k, v * self.cls_weights[k]) for k, v in decisionTree.results.items()])
+                dcNodes[iSplit].append(['leaf', self.index_to_class[max(score, key=score.get)], szParent, bBranch, missingGoes, dcSummary['stats'],
                                         dcSummary['samples']])
                 return dcY
             else:
@@ -233,10 +318,10 @@ class DecisionTree:
         dot_data = '\n'.join(lsDot)
         return dot_data
 
-    @classmethod
-    def _node_explore(cls, node, row):
+    def _node_explore(self, node, row):
         if node.leaf or ((node.trueBranch is None) and (node.falseBranch is None)):
-            return max(node.results, key=node.results.get)
+            score = dict([(k, v * self.cls_weights[k]) for k, v in node.results.items()])
+            return max(score, key=score.get)
         else:
             v = row[node.col]
             branch = None
@@ -250,7 +335,7 @@ class DecisionTree:
                     branch = node.falseBranch
             else:
                 branch = node.trueBranch if v == node.value else node.falseBranch
-        return cls._node_explore(branch, row)
+        return self._node_explore(branch, row)
 
     def classify(self, data):
         """Classifies the observationss according to the tree.
@@ -329,23 +414,3 @@ class DecisionTree:
                 node_to_prune.leaf = True
         
         return alpha
-
-# def prune(tree, minGain, evaluationFunction=entropy, notify=False):
-#     """Prunes the obtained tree according to the minimal gain (entropy or Gini). """
-#     # recursive call for each branch
-#     if tree.trueBranch.results == None: prune(tree.trueBranch, minGain, evaluationFunction, notify)
-#     if tree.falseBranch.results == None: prune(tree.falseBranch, minGain, evaluationFunction, notify)
-
-#     # merge leaves (potentionally)
-#     if tree.trueBranch.results != None and tree.falseBranch.results != None:
-#         tb, fb = [], []
-
-#         for v, c in tree.trueBranch.results.items(): tb += [[v]] * c
-#         for v, c in tree.falseBranch.results.items(): fb += [[v]] * c
-
-#         p = float(len(tb)) / len(tb + fb)
-#         delta = evaluationFunction(tb+fb) - p*evaluationFunction(tb) - (1-p)*evaluationFunction(fb)
-#         if delta < minGain:
-#             if notify: print('A branch was pruned: gain = %f' % delta)
-#             tree.trueBranch, tree.falseBranch = None, None
-#             tree.results = uniqueCounts(tb + fb)
