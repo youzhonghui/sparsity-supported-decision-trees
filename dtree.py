@@ -145,7 +145,12 @@ class DecisionTree:
             if node.leaf:
                 return
 
-            if (np.isnan(sample[node.col]) and node.missingDirection) or sample[node.col] >= node.value:
+            if np.isnan(sample[node.col]):
+                if node.missingDirection:
+                    _pass(node.trueBranch)
+                else:
+                    _pass(node.falseBranch)
+            elif sample[node.col] >= node.value:
                 _pass(node.trueBranch)
             else:
                 _pass(node.falseBranch)
